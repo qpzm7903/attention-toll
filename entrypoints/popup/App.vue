@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { attentionDay } from '@/utils/day';
 import { levelFor } from '@/utils/levels';
 import { getSettings, getUsage } from '@/utils/storage';
+import { mergedUsage } from '@/utils/sync';
 import type { DayUsage, Thresholds } from '@/utils/types';
 
 const today = ref<DayUsage>({ total: 0, perSite: {} });
@@ -11,7 +12,8 @@ const thresholds = ref<Thresholds>({ l1: 30, l2: 45, l3: 60, l4: 90 });
 onMounted(async () => {
   const [settings, usage] = await Promise.all([getSettings(), getUsage()]);
   thresholds.value = settings.thresholds;
-  today.value = usage[attentionDay()] ?? { total: 0, perSite: {} };
+  const merged = await mergedUsage(usage);
+  today.value = merged[attentionDay()] ?? { total: 0, perSite: {} };
 });
 
 const minutes = computed(() => Math.floor(today.value.total / 60));

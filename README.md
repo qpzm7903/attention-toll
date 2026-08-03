@@ -14,6 +14,7 @@ Chrome 插件：监控你在分心网站（bilibili、知乎……）上消耗�
   - L4 等待 30 秒 + 输入承诺语句 → 仅放行 5 分钟
 - **通行记录**：拦截页的两条出路都必须书写——继续时写意图/承诺，离开时写「接下来去做什么」（执行意图）；历史记录在统计页回看，拦截页会回显你上一条写下的话（自我对质）
 - **永不硬封锁**（ADR-0001）、**设置不对称生效**（ADR-0002）：收紧立即生效，放宽次日 4 点生效
+- **多端同步**（ADR-0004）：通过 `chrome.storage.sync` 做设备分账——每台设备只增写自己的消耗分桶，预算池按全设备总和判定，放行状态与设置跨设备生效；未登录 Google 时自动退化为单机模式
 
 领域术语见 [CONTEXT.md](./CONTEXT.md)，关键决策见 [docs/adr/](./docs/adr/)。
 
@@ -34,7 +35,7 @@ npm run compile  # 类型检查
 
 ## 技术栈
 
-WXT + TypeScript + Vue 3，Manifest V3（ADR-0003）。数据全部存于本地 `chrome.storage.local`，统计页支持 JSON 导出。
+WXT + TypeScript + Vue 3，Manifest V3（ADR-0003）。本机完整数据存于 `chrome.storage.local`，跨设备交换层走 `chrome.storage.sync`（ADR-0004），统计页支持 JSON 导出。
 
 ## License
 

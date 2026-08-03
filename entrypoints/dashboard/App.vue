@@ -7,6 +7,7 @@ import {
   getTollRecords,
   getUsage,
 } from '@/utils/storage';
+import { mergedRecords, mergedUsage } from '@/utils/sync';
 import type {
   PendingRelaxation,
   Settings,
@@ -39,9 +40,9 @@ async function load() {
     getTollRecords(),
   ]);
   settings.value = JSON.parse(JSON.stringify(s));
-  usage.value = u;
+  usage.value = await mergedUsage(u);
   pending.value = p;
-  records.value = r.slice().reverse();
+  records.value = (await mergedRecords(r)).reverse();
 }
 
 function fmtTime(ts: number) {

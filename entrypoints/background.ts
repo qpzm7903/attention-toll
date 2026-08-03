@@ -14,6 +14,15 @@ import {
 } from '@/utils/storage';
 import { attentionDay, nextResetTime } from '@/utils/day';
 import {
+  mergedUsage,
+  pullGrace,
+  pullSettings,
+  pushGrace,
+  pushRecords,
+  pushSettings,
+  pushUsage,
+} from '@/utils/sync';
+import {
   GRACE_MINUTES,
   isBlocked,
   levelFor,
@@ -31,12 +40,36 @@ export default defineBackground(() => {
   async function init() {
     await ensureDefaults();
     await migrateLegacyIntents();
+    await adoptRemoteSettings();
     browser.idle.setDetectionInterval(60);
     await browser.alarms.create('tick', {
       periodInMinutes: TICK_SECONDS / 60,
     });
     await browser.alarms.create('daily-reset', { when: nextResetTime() });
     await updateBadge();
+  }
+
+  /** 设置最后写入胜出：其他设备的更新时间戳更新时采纳（ADR-0004） */
+  async function adoptRemoteSettings() {
+    const remote = await pullSettings();
+    if (!remote) return;
+    const { settingsTs = 0 } = await browser.storage.local.get('settingsTs');
+    if (remote.ts > (settingsTs as number)) {
+      await setSettings(remote.settings);
+      await setPending(remote.pending);
+      await browser.storage.local.set({ settingsTs: remote.ts });
+    }
+  }
+
+  browser.storage.sync.onChanged.addListener((changes) => {
+    if (changes['s:settings']) void adoptRemoteSettings();
+  });
+
+  /** 放行跨设备生效：取本地与同步中截止时间更晚的一个 */
+  async function getEffectiveGrace() {
+    const local = await getGrace();
+    const remote = await pullGrace();
+    return remote && remote.until > local.until ? remote : local;
   }
 
   /** 0.1.0 把 L2 意图存在 intents 键下，升级时并入通行记录（旧数据无网站和去向信息） */
@@ -111,24 +144,30 @@ export default defineBackground(() => {
       }
       usage[day] = dayUsage;
       await setUsage(usage);
+      await pushUsage(usage);
     }
     await updateBadge();
   }
 
-  /** 凌晨 4 点：应用待生效的放宽设置（ADR-0002），清空放行状态 */
+  /** 凌晨 4 点：应用待生效的放宽设置（ADR-0002），清空放行状态。多设备下最先到点的设备落地并同步 */
   async function dailyReset() {
     const pending = await getPending();
     if (pending && pending.applyAt <= Date.now()) {
       await setSettings(pending.target);
       await setPending(null);
+      const ts = Date.now();
+      await browser.storage.local.set({ settingsTs: ts });
+      await pushSettings({ settings: pending.target, pending: null, ts });
     }
     await setGrace({ ackLevel: 0, until: 0 });
+    await pushGrace({ ackLevel: 0, until: 0 });
     await browser.alarms.create('daily-reset', { when: nextResetTime() });
     await updateBadge();
   }
 
+  /** 干预判定基于全设备合并总和（设备分账，见 CONTEXT.md） */
   async function todaySeconds(): Promise<number> {
-    const usage = await getUsage();
+    const usage = await mergedUsage(await getUsage());
     return usage[attentionDay()]?.total ?? 0;
   }
 
@@ -166,11 +205,13 @@ export default defineBackground(() => {
 
     const hasRelaxation =
       JSON.stringify(immediate) !== JSON.stringify(requested);
-    if (hasRelaxation) {
-      await setPending({ applyAt: nextResetTime(), target: requested });
-    } else {
-      await setPending(null);
-    }
+    const pending = hasRelaxation
+      ? { applyAt: nextResetTime(), target: requested }
+      : null;
+    await setPending(pending);
+    const ts = Date.now();
+    await browser.storage.local.set({ settingsTs: ts });
+    await pushSettings({ settings: immediate, pending, ts });
     await updateBadge();
     return { settings: immediate, pendingAt: hasRelaxation ? nextResetTime() : null };
   }
@@ -185,7 +226,7 @@ export default defineBackground(() => {
             : null;
           const seconds = await todaySeconds();
           const level = levelFor(seconds, settings.thresholds);
-          const grace = await getGrace();
+          const grace = await getEffectiveGrace();
           const records = await getTollRecords();
           const state: SiteState = {
             tracked: !!site,
@@ -212,15 +253,17 @@ export default defineBackground(() => {
               text: message.text,
               outcome,
             });
+            await pushRecords(await getTollRecords());
           }
           if (level === 1) {
             await setGrace({ ackLevel: 1, until: nextResetTime() });
           } else if (outcome === 'continued') {
-            const graceMinutes = GRACE_MINUTES[level] ?? 0;
-            await setGrace({
+            const grace = {
               ackLevel: level,
-              until: Date.now() + graceMinutes * 60_000,
-            });
+              until: Date.now() + (GRACE_MINUTES[level] ?? 0) * 60_000,
+            };
+            await setGrace(grace);
+            await pushGrace(grace);
           }
           return { ok: true };
         }

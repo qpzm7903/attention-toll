@@ -8,3 +8,4 @@ stats-*.json
 .DS_Store
 *.log
 .claude/
+*.zip

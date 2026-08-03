@@ -7,3 +7,4 @@ stats-*.json
 .env.*
 .DS_Store
 *.log
+.claude/

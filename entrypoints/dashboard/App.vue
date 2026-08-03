@@ -24,7 +24,12 @@ const records = ref<TollRecord[]>([]);
 const newSite = ref('');
 const notice = ref('');
 
-onMounted(load);
+onMounted(() => {
+  load();
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) load();
+  });
+});
 
 async function load() {
   const [s, u, p, r] = await Promise.all([

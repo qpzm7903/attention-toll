@@ -57,6 +57,7 @@ const CSS = `
 .btn-leave.primary { background: #4a90d9; color: #fff; }
 .btn-leave:disabled { border-color: #555; color: #777; background: transparent; cursor: not-allowed; }
 .btn-back { border: none; background: none; color: #888; font-size: 13px; cursor: pointer; margin-top: 14px; }
+.hint { color: #e6a23c; font-size: 13px; line-height: 1.6; margin-top: 12px; }
 `;
 
 export default defineContentScript({
@@ -87,6 +88,27 @@ export default defineContentScript({
     const fmtMinutes = (s: number) => Math.floor(s / 60);
     /** 损失框架：把消耗换算成 25 分钟专注块 */
     const focusBlocks = (s: number) => (s / 60 / 25).toFixed(1);
+
+    /** 扩展更新后，旧页面的脚本与新后台断连，写入会失败——必须提示而不是静默丢字 */
+    async function sendAck(payload: Record<string, unknown>): Promise<boolean> {
+      try {
+        await browser.runtime.sendMessage(payload);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    function showStaleHint(container: Element) {
+      let hint = container.querySelector('.hint') as HTMLElement | null;
+      if (!hint) {
+        hint = document.createElement('div');
+        hint.className = 'hint';
+        container.appendChild(hint);
+      }
+      hint.textContent =
+        '⚠️ 插件已更新，当前页面与它断开了连接——请刷新本页后重试（刚写的内容仍在输入框里，可先复制）。';
+    }
 
     const escapeHtml = (s: string) =>
       s.replace(
@@ -153,8 +175,9 @@ export default defineContentScript({
         </div>
       `;
       backdrop.querySelector('button')!.addEventListener('click', async () => {
-        await browser.runtime.sendMessage({ type: 'acknowledge', level: 1 });
-        clearUi();
+        const ok = await sendAck({ type: 'acknowledge', level: 1 });
+        if (ok) clearUi();
+        else showStaleHint(backdrop.querySelector('.notice')!);
       });
       root.appendChild(backdrop);
     }
@@ -232,14 +255,15 @@ export default defineContentScript({
         input.addEventListener('paste', (e) => e.preventDefault());
 
         btnContinue.addEventListener('click', async () => {
-          await browser.runtime.sendMessage({
+          const ok = await sendAck({
             type: 'acknowledge',
             level,
             outcome: 'continued',
             site: state.site,
             text: input.value.trim(),
           });
-          clearUi();
+          if (ok) clearUi();
+          else showStaleHint(card);
         });
         btnLeave.addEventListener('click', () => {
           clearInterval(timer);
@@ -269,13 +293,17 @@ export default defineContentScript({
         input.addEventListener('paste', (e) => e.preventDefault());
 
         btnGo.addEventListener('click', async () => {
-          await browser.runtime.sendMessage({
+          const ok = await sendAck({
             type: 'acknowledge',
             level,
             outcome: 'left',
             site: state.site,
             text: input.value.trim(),
           });
+          if (!ok) {
+            showStaleHint(card);
+            return;
+          }
           window.location.href = 'about:blank';
           window.close();
         });

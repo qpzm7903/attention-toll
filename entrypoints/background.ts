@@ -30,12 +30,34 @@ export default defineBackground(() => {
 
   async function init() {
     await ensureDefaults();
+    await migrateLegacyIntents();
     browser.idle.setDetectionInterval(60);
     await browser.alarms.create('tick', {
       periodInMinutes: TICK_SECONDS / 60,
     });
     await browser.alarms.create('daily-reset', { when: nextResetTime() });
     await updateBadge();
+  }
+
+  /** 0.1.0 把 L2 意图存在 intents 键下，升级时并入通行记录（旧数据无网站和去向信息） */
+  async function migrateLegacyIntents() {
+    const res = await browser.storage.local.get('intents');
+    const intents = res.intents as { ts: number; text: string }[] | undefined;
+    if (!intents?.length) {
+      if (intents) await browser.storage.local.remove('intents');
+      return;
+    }
+    const records = await getTollRecords();
+    const migrated = intents.map((i) => ({
+      ts: i.ts,
+      site: '',
+      level: 2,
+      text: i.text,
+      outcome: 'continued' as const,
+    }));
+    const merged = [...migrated, ...records].sort((a, b) => a.ts - b.ts);
+    await browser.storage.local.set({ tollRecords: merged.slice(-500) });
+    await browser.storage.local.remove('intents');
   }
 
   browser.alarms.onAlarm.addListener(async (alarm) => {

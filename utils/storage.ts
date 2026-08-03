@@ -1,8 +1,8 @@
 import type {
   GraceState,
-  IntentEntry,
   PendingRelaxation,
   Settings,
+  TollRecord,
   UsageMap,
 } from './types';
 
@@ -33,11 +33,11 @@ export const getPending = () =>
 export const setPending = (p: PendingRelaxation | null) =>
   browser.storage.local.set({ pending: p });
 
-export const getIntents = () => get<IntentEntry[]>('intents', []);
-export async function addIntent(entry: IntentEntry) {
-  const intents = await getIntents();
-  intents.push(entry);
-  await browser.storage.local.set({ intents: intents.slice(-100) });
+export const getTollRecords = () => get<TollRecord[]>('tollRecords', []);
+export async function addTollRecord(record: TollRecord) {
+  const records = await getTollRecords();
+  records.push(record);
+  await browser.storage.local.set({ tollRecords: records.slice(-500) });
 }
 
 export async function ensureDefaults() {

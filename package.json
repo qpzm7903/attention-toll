@@ -2,7 +2,7 @@
   "name": "attention-toll",
   "description": "监控分心网站的注意力消耗，用递增摩擦让继续娱乐成为有代价的显式选择",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -1,5 +1,5 @@
 import {
-  addIntent,
+  addTollRecord,
   ensureDefaults,
   getGrace,
   getPending,
@@ -8,6 +8,7 @@ import {
   matchSite,
   setGrace,
   setPending,
+  getTollRecords,
   setSettings,
   setUsage,
 } from '@/utils/storage';
@@ -163,6 +164,7 @@ export default defineBackground(() => {
           const seconds = await todaySeconds();
           const level = levelFor(seconds, settings.thresholds);
           const grace = await getGrace();
+          const records = await getTollRecords();
           const state: SiteState = {
             tracked: !!site,
             site: site ?? undefined,
@@ -172,21 +174,32 @@ export default defineBackground(() => {
             grace,
             blocked: !!site && isBlocked(level, grace),
             showToast: !!site && shouldShowToast(level, grace),
+            lastRecord: records[records.length - 1] ?? null,
           };
           return state;
         }
         case 'acknowledge': {
-          // 用户在拦截页付出代价：记录意图，授予对应等级的放行时段
+          // 拦截页出口：两条路都必须书写；只有「继续访问」发放行时段
           const level: number = message.level;
-          if (message.intent) {
-            await addIntent({ ts: Date.now(), text: message.intent });
+          const outcome: 'continued' | 'left' = message.outcome ?? 'continued';
+          if (message.text) {
+            await addTollRecord({
+              ts: Date.now(),
+              site: message.site ?? '',
+              level,
+              text: message.text,
+              outcome,
+            });
           }
-          const graceMinutes = GRACE_MINUTES[level] ?? 0;
-          const until =
-            level === 1
-              ? nextResetTime()
-              : Date.now() + graceMinutes * 60_000;
-          await setGrace({ ackLevel: level, until });
+          if (level === 1) {
+            await setGrace({ ackLevel: 1, until: nextResetTime() });
+          } else if (outcome === 'continued') {
+            const graceMinutes = GRACE_MINUTES[level] ?? 0;
+            await setGrace({
+              ackLevel: level,
+              until: Date.now() + graceMinutes * 60_000,
+            });
+          }
           return { ok: true };
         }
         case 'update-settings':

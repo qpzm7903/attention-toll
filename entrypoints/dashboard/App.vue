@@ -1,8 +1,18 @@
 <script lang="ts" setup>
 import { computed, onMounted, ref } from 'vue';
 import { recentDays } from '@/utils/day';
-import { getPending, getSettings, getUsage } from '@/utils/storage';
-import type { PendingRelaxation, Settings, UsageMap } from '@/utils/types';
+import {
+  getPending,
+  getSettings,
+  getTollRecords,
+  getUsage,
+} from '@/utils/storage';
+import type {
+  PendingRelaxation,
+  Settings,
+  TollRecord,
+  UsageMap,
+} from '@/utils/types';
 
 const usage = ref<UsageMap>({});
 const settings = ref<Settings>({
@@ -10,20 +20,32 @@ const settings = ref<Settings>({
   thresholds: { l1: 30, l2: 45, l3: 60, l4: 90 },
 });
 const pending = ref<PendingRelaxation | null>(null);
+const records = ref<TollRecord[]>([]);
 const newSite = ref('');
 const notice = ref('');
 
 onMounted(load);
 
 async function load() {
-  const [s, u, p] = await Promise.all([
+  const [s, u, p, r] = await Promise.all([
     getSettings(),
     getUsage(),
     getPending(),
+    getTollRecords(),
   ]);
   settings.value = JSON.parse(JSON.stringify(s));
   usage.value = u;
   pending.value = p;
+  records.value = r.slice().reverse();
+}
+
+function fmtTime(ts: number) {
+  return new Date(ts).toLocaleString('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 const days = computed(() => {
@@ -88,7 +110,7 @@ async function save() {
 
 async function exportJson() {
   const data = JSON.stringify(
-    { usage: usage.value, settings: settings.value },
+    { usage: usage.value, settings: settings.value, tollRecords: records.value },
     null,
     2,
   );
@@ -141,6 +163,32 @@ async function exportJson() {
       </table>
       <p v-else class="muted">暂无数据。</p>
       <button class="secondary" @click="exportJson">导出 JSON</button>
+    </section>
+
+    <section>
+      <h2>通行记录</h2>
+      <p class="muted">
+        每次通过拦截页写下的话——继续时写的是关税，离开时写的是去向。
+      </p>
+      <table v-if="records.length">
+        <thead>
+          <tr><th>时间</th><th>网站</th><th>等级</th><th>去向</th><th>写下的话</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="r in records" :key="r.ts">
+            <td class="nowrap">{{ fmtTime(r.ts) }}</td>
+            <td>{{ r.site }}</td>
+            <td>L{{ r.level }}</td>
+            <td>
+              <span :class="r.outcome === 'left' ? 'badge-left' : 'badge-stay'">
+                {{ r.outcome === 'left' ? '离开' : '继续' }}
+              </span>
+            </td>
+            <td>{{ r.text }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else class="muted">还没有通行记录。</p>
     </section>
 
     <section>
@@ -218,4 +266,10 @@ button { cursor: pointer; font-size: 13px; border-radius: 8px; }
 .secondary { padding: 8px 16px; border: 1px solid #ddd; background: #fff; }
 .link { border: none; background: none; color: #d9534f; font-size: 12px; }
 .notice { font-size: 13px; color: #e6702c; margin-top: 10px; }
+.nowrap { white-space: nowrap; }
+.badge-stay, .badge-left {
+  display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px;
+}
+.badge-stay { background: #fdecea; color: #d9534f; }
+.badge-left { background: #eaf3fd; color: #4a90d9; }
 </style>

@@ -33,10 +33,15 @@ export interface GraceState {
   until: number;
 }
 
-/** L2 意图询问的回答记录 */
-export interface IntentEntry {
+export type TollOutcome = 'continued' | 'left';
+
+/** 通行记录：通过拦截页时留下的书面凭据，两条出路都必须书写（见 CONTEXT.md） */
+export interface TollRecord {
   ts: number;
+  site: string;
+  level: number;
   text: string;
+  outcome: TollOutcome;
 }
 
 export type InterventionLevel = 0 | 1 | 2 | 3 | 4;
@@ -51,4 +56,6 @@ export interface SiteState {
   grace: GraceState;
   blocked: boolean;
   showToast: boolean;
+  /** 最近一条通行记录，用于拦截页自我对质回显 */
+  lastRecord: TollRecord | null;
 }
